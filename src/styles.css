@@ -1,0 +1,119 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Control Engineering Solver — design system.
+ * Estética: caderno técnico / prancheta de engenharia.
+ * Todas as cores em oklch e sempre via tokens semânticos.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+}
+
+:root {
+  --radius: 0.375rem;
+  --background: oklch(0.19 0.017 250);
+  --foreground: oklch(0.94 0.008 240);
+  --card: oklch(0.235 0.019 250);
+  --card-foreground: oklch(0.94 0.008 240);
+  --popover: oklch(0.235 0.019 250);
+  --popover-foreground: oklch(0.94 0.008 240);
+  --primary: oklch(0.78 0.15 84);
+  --primary-foreground: oklch(0.21 0.03 80);
+  --secondary: oklch(0.3 0.022 250);
+  --secondary-foreground: oklch(0.94 0.008 240);
+  --muted: oklch(0.27 0.02 250);
+  --muted-foreground: oklch(0.7 0.017 245);
+  --accent: oklch(0.74 0.11 200);
+  --accent-foreground: oklch(0.2 0.03 240);
+  --destructive: oklch(0.62 0.2 25);
+  --destructive-foreground: oklch(0.97 0.01 20);
+  --warning: oklch(0.8 0.13 75);
+  --warning-foreground: oklch(0.22 0.03 75);
+  --border: oklch(0.35 0.022 250);
+  --input: oklch(0.33 0.022 250);
+  --ring: oklch(0.78 0.15 84);
+  --surface: oklch(0.215 0.018 250);
+  --surface-foreground: oklch(0.9 0.01 240);
+  --grid-line: oklch(0.28 0.02 250);
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    background-image:
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+}
+
+@utility section-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+@utility math-line {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  line-height: 1.75;
+  color: var(--color-surface-foreground);
+  overflow-wrap: anywhere;
+}
+
+@utility panel {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
