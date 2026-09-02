@@ -7,6 +7,7 @@ import { FileText, Image as ImageIcon, Loader2, Type, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { solveExercise, type SolveResult } from "@/lib/solver.functions";
+import { MathInline, MathLine, MathLines } from "@/lib/math-render";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -52,18 +53,6 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <h2 className="section-label">{label}</h2>
       <div className="mt-3">{children}</div>
     </section>
-  );
-}
-
-function MathLines({ lines }: { lines: string[] }) {
-  return (
-    <div className="space-y-1">
-      {lines.map((line, i) => (
-        <p key={i} className="math-line">
-          {line}
-        </p>
-      ))}
-    </div>
   );
 }
 
@@ -197,14 +186,18 @@ function SolverPage() {
               </p>
               <ul className="mt-2 list-disc space-y-1 pl-5 math-line">
                 {result.faltando.map((f, i) => (
-                  <li key={i}>{f}</li>
+                  <li key={i}>
+                    <MathInline text={f} />
+                  </li>
                 ))}
               </ul>
             </Section>
           ) : (
             <>
               <Section label="Questão">
-                <p className="text-sm leading-relaxed text-foreground">{result.questao}</p>
+                <p className="text-sm leading-relaxed text-foreground">
+                  <MathInline text={result.questao} />
+                </p>
                 {result.topicos.length > 0 && (
                   <p className="mt-2 font-mono text-xs text-muted-foreground">
                     tópicos: {result.topicos.join(", ")}
@@ -216,10 +209,15 @@ function SolverPage() {
                 <div className="panel border-warning/60 px-5 py-4">
                   <h2 className="section-label text-warning">Ambiguidade no enunciado</h2>
                   <div className="mt-3 space-y-1 math-line">
-                    <p>Interpretação A: {result.ambiguidade.interpretacao_a}</p>
-                    <p>Interpretação B: {result.ambiguidade.interpretacao_b}</p>
                     <p>
-                      Utilizada: {result.ambiguidade.escolhida} — {result.ambiguidade.motivo}
+                      Interpretação A: <MathInline text={result.ambiguidade.interpretacao_a ?? ""} />
+                    </p>
+                    <p>
+                      Interpretação B: <MathInline text={result.ambiguidade.interpretacao_b ?? ""} />
+                    </p>
+                    <p>
+                      Utilizada: {result.ambiguidade.escolhida} —{" "}
+                      <MathInline text={result.ambiguidade.motivo ?? ""} />
                     </p>
                   </div>
                 </div>
@@ -228,7 +226,9 @@ function SolverPage() {
               <Section label="O que foi pedido">
                 <ul className="list-disc space-y-1 pl-5 math-line">
                   {result.pedido.map((p, i) => (
-                    <li key={i}>{p}</li>
+                    <li key={i}>
+                      <MathInline text={p} />
+                    </li>
                   ))}
                 </ul>
               </Section>
@@ -238,9 +238,11 @@ function SolverPage() {
               </Section>
 
               <Section label="Método utilizado">
-                <p className="math-line">{result.metodo.nome}</p>
+                <p className="math-line">
+                  <MathInline text={result.metodo.nome} />
+                </p>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  Justificativa: {result.metodo.justificativa}
+                  Justificativa: <MathInline text={result.metodo.justificativa} />
                 </p>
                 {result.metodo.metodologia && (
                   <p className="mt-2 font-mono text-xs text-accent">
@@ -274,10 +276,10 @@ function SolverPage() {
               <Section label="Resultados">
                 <div className="space-y-1">
                   {result.resultados.map((r, i) => (
-                    <p key={i} className="math-line">
-                      {r.grandeza} = {r.valor}
-                      {r.unidade ? ` ${r.unidade}` : ""}
-                    </p>
+                    <MathLine
+                      key={i}
+                      line={`${r.grandeza} = ${r.valor}${r.unidade ? ` ${r.unidade}` : ""}`}
+                    />
                   ))}
                 </div>
                 <div className="mt-4 border-t border-border pt-3">
@@ -287,12 +289,12 @@ function SolverPage() {
                   </p>
                   {result.verificacao.motor_matematico && (
                     <p className="mt-1 font-mono text-xs text-muted-foreground">
-                      Motor matemático: {result.verificacao.motor_matematico}
+                      Motor matemático: <MathInline text={result.verificacao.motor_matematico} />
                     </p>
                   )}
                   {result.verificacao.observacoes.map((o, i) => (
                     <p key={i} className="mt-1 font-mono text-xs text-muted-foreground">
-                      · {o}
+                      · <MathInline text={o} />
                     </p>
                   ))}
                 </div>

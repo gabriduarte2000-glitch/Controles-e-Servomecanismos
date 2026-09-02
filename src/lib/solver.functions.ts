@@ -224,9 +224,14 @@ export const solveExercise = createServerFn({ method: "POST" })
         modelagem: solution.modelagem ?? [],
         resolucao: solution.resolucao ?? [],
         resultados: solution.resultados ?? [],
-        ambiguidade: solution.ambiguidade,
+        ...(solution.ambiguidade !== undefined ? { ambiguidade: solution.ambiguidade } : {}),
         matlab: solution.matlab ?? "",
-        verificacao: { aprovado, observacoes, motor_matematico: motorMatematico, revisado },
+        verificacao: {
+          aprovado,
+          observacoes,
+          revisado,
+          ...(motorMatematico !== undefined ? { motor_matematico: motorMatematico } : {}),
+        },
         ilegivel: extraction.ilegivel?.filter(Boolean) ?? [],
         topicos: topics,
       };
