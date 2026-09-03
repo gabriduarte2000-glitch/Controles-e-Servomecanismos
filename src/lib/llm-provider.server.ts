@@ -12,9 +12,9 @@ const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models
 
 export const MODELS = {
   /** Leitura multimodal (imagem/PDF) e classificação — barato/rápido. */
-  fast: "gemini-2.5-flash-lite",
+  fast: "gemini-3.5-flash-lite",
   /** Resolução matemática e verificação — raciocínio. */
-  reasoning: "gemini-2.5-flash",
+  reasoning: "gemini-3.5-flash",
 } as const;
 
 export type TextPart = { type: "text"; text: string };
