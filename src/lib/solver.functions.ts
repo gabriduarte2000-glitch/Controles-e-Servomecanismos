@@ -16,6 +16,7 @@ import {
   SYSTEM_VERIFIER,
 } from "./control-prompts.server";
 import { formatRoots } from "./math-engine.server";
+import { parseDiagrama, type DiagramaEstruturado } from "./diagram-types";
 
 const inputSchema = z.object({
   text: z.string().max(20000).optional(),
@@ -31,7 +32,7 @@ const inputSchema = z.object({
 
 export type SolveInput = z.infer<typeof inputSchema>;
 
-export type SubBlock = { aplicavel: boolean; itens: string[] };
+export type SubBlock = { aplicavel: boolean; itens: string[]; diagrama?: DiagramaEstruturado | null };
 
 /** Os 10 sub-blocos nomeados da cadeia de conversão eletromecânica, em ordem fixa. */
 export type CadeiaEletromecanica = {
@@ -80,6 +81,7 @@ function subBlock(v: unknown): SubBlock {
   return {
     aplicavel: Boolean(o.aplicavel),
     itens: Array.isArray(o.itens) ? o.itens.filter((i) => typeof i === "string") : [],
+    diagrama: parseDiagrama(o.diagrama),
   };
 }
 

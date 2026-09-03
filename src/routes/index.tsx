@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { solveExercise, type SolveResult, type SubBlock } from "@/lib/solver.functions";
 import { MathInline, MathLine, MathLines } from "@/lib/math-render";
+import { DiagramView } from "@/lib/diagram-render";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -58,9 +59,14 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 /** Um dos 10 sub-blocos nomeados da cadeia eletromecânica — só renderiza se aplicável. */
 function SubBlockSection({ number, label, block }: { number: string; label: string; block: SubBlock }) {
-  if (!block.aplicavel || block.itens.length === 0) return null;
+  if (!block.aplicavel || (block.itens.length === 0 && !block.diagrama)) return null;
   return (
     <Section label={`${number}. ${label}`}>
+      {block.diagrama && (
+        <div className="mb-3 rounded-md border border-border bg-background/40 p-3">
+          <DiagramView diagrama={block.diagrama} />
+        </div>
+      )}
       <MathLines lines={block.itens} />
     </Section>
   );
