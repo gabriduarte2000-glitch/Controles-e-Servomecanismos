@@ -31,15 +31,32 @@ const inputSchema = z.object({
 
 export type SolveInput = z.infer<typeof inputSchema>;
 
+export type SubBlock = { aplicavel: boolean; itens: string[] };
+
+/** Os 10 sub-blocos nomeados da cadeia de conversão eletromecânica, em ordem fixa. */
+export type CadeiaEletromecanica = {
+  aplicavel: boolean;
+  analogia: string;
+  diagrama_mecanico: SubBlock;
+  tabela_conversao: { aplicavel: boolean; linhas: Array<{ mecanico: string; eletrico: string }> };
+  conversao_mecanico_eletrico: SubBlock;
+  diagrama_eletrico: SubBlock;
+  reducao_circuito: SubBlock;
+  equacoes_eletricas: SubBlock;
+  sistema_matricial: SubBlock;
+  resolucao_sistema: SubBlock;
+  conversao_eletrico_mecanico: SubBlock;
+  obtencao_saida: SubBlock;
+};
+
 export type SolveResult = {
   insuficiente: boolean;
   faltando: string[];
-  questao: string;
-  pedido: string[];
-  dados: string[];
+  interpretacao: { entrada: string; saida: string; itens: string[] };
   metodo: { nome: string; justificativa: string; metodologia: string; complemento?: string };
-  modelagem: string[];
+  eletromecanica: CadeiaEletromecanica;
   resolucao: Array<{ titulo: string; passos: string[] }>;
+  resultado_final: { entrada: string; saida: string; resultado: string };
   resultados: Array<{ grandeza: string; valor: string; unidade?: string }>;
   ambiguidade?: {
     existe: boolean;
@@ -57,6 +74,40 @@ export type SolveResult = {
   ilegivel: string[];
   topicos: string[];
 };
+
+function subBlock(v: unknown): SubBlock {
+  const o = (v ?? {}) as Partial<SubBlock>;
+  return {
+    aplicavel: Boolean(o.aplicavel),
+    itens: Array.isArray(o.itens) ? o.itens.filter((i) => typeof i === "string") : [],
+  };
+}
+
+function defaultEletromecanica(v: unknown): CadeiaEletromecanica {
+  const o = (v ?? {}) as Partial<CadeiaEletromecanica> & {
+    tabela_conversao?: { aplicavel?: boolean; linhas?: unknown };
+  };
+  const linhasRaw = Array.isArray(o.tabela_conversao?.linhas) ? o.tabela_conversao!.linhas : [];
+  return {
+    aplicavel: Boolean(o.aplicavel),
+    analogia: typeof o.analogia === "string" ? o.analogia : "nao_aplicavel",
+    diagrama_mecanico: subBlock(o.diagrama_mecanico),
+    tabela_conversao: {
+      aplicavel: Boolean(o.tabela_conversao?.aplicavel),
+      linhas: (linhasRaw as Array<{ mecanico?: unknown; eletrico?: unknown }>)
+        .filter((l) => typeof l?.mecanico === "string" && typeof l?.eletrico === "string")
+        .map((l) => ({ mecanico: l.mecanico as string, eletrico: l.eletrico as string })),
+    },
+    conversao_mecanico_eletrico: subBlock(o.conversao_mecanico_eletrico),
+    diagrama_eletrico: subBlock(o.diagrama_eletrico),
+    reducao_circuito: subBlock(o.reducao_circuito),
+    equacoes_eletricas: subBlock(o.equacoes_eletricas),
+    sistema_matricial: subBlock(o.sistema_matricial),
+    resolucao_sistema: subBlock(o.resolucao_sistema),
+    conversao_eletrico_mecanico: subBlock(o.conversao_eletrico_mecanico),
+    obtencao_saida: subBlock(o.obtencao_saida),
+  };
+}
 
 function userContent(data: SolveInput, prefix: string): ContentPart[] {
   const parts: ContentPart[] = [{ type: "text", text: prefix }];
@@ -147,15 +198,15 @@ export const solveExercise = createServerFn({ method: "POST" })
             analysis,
           )}\n\n${
             requerAnalogia
-              ? "ATENÇÃO: este problema foi classificado como exigindo a METODOLOGIA DE ANALOGIA ELETROMECÂNICA EM 6 FASES definida no seu system prompt. É OBRIGATÓRIO segui-la à risca: 'modelagem' com exatamente as fases 1 e 2 (cada uma com diagrama ASCII), e as 4 primeiras entradas de 'resolucao' sendo as fases 3, 4, 5 (em 5.1/5.2/5.3) e 6, nesta ordem, com a notação de variável por elemento (V_C1, I_L1 etc.). NÃO responda com uma modelagem genérica.\n\n"
+              ? "ATENÇÃO: este problema foi classificado como exigindo a CADEIA DE CONVERSÃO ELETROMECÂNICA definida no seu system prompt. É OBRIGATÓRIO preencher 'eletromecanica.aplicavel' = true e todos os 10 sub-blocos na ordem fixa definida (marcando 'aplicavel': false apenas nos que genuinamente não existirem fisicamente neste problema), cada um consequência direta do anterior. NÃO responda com uma modelagem genérica solta em 'resolucao'.\n\n"
               : ""
           }Resolva completamente.`,
         },
       ];
       let raw = await callLlm({ model: MODELS.reasoning, json: true, messages: solveMessages });
-      let solution = parseJsonLoose<SolveResult & { polinomio_caracteristico_coef?: number[]; pontos_de_verificacao?: string[] }>(
-        raw,
-      );
+      let solution = parseJsonLoose<
+        Partial<SolveResult> & { polinomio_caracteristico_coef?: number[]; pontos_de_verificacao?: string[] }
+      >(raw);
 
       let motorMatematico: string | undefined;
       let aprovado = true;
@@ -204,7 +255,7 @@ export const solveExercise = createServerFn({ method: "POST" })
               { role: "assistant", content: raw },
               {
                 role: "user",
-                content: `O VERIFICADOR MATEMÁTICO apontou os problemas abaixo. Corrija a resolução inteira e responda no mesmo formato JSON.\nERROS: ${JSON.stringify(
+                content: `O VERIFICADOR MATEMÁTICO apontou os problemas abaixo, incluindo possíveis QUEBRAS DE CADEIA entre sub-blocos. Corrija a resolução inteira (mantendo a mesma cadeia causal entre sub-blocos) e responda no mesmo formato JSON.\nERROS: ${JSON.stringify(
                   verify.erros,
                 )}\nMOTOR MATEMÁTICO: ${motorMatematico ?? "não aplicável"}`,
               },
@@ -223,12 +274,19 @@ export const solveExercise = createServerFn({ method: "POST" })
       return {
         insuficiente: Boolean(solution.insuficiente),
         faltando: solution.faltando ?? [],
-        questao: solution.questao ?? "",
-        pedido: solution.pedido ?? [],
-        dados: solution.dados ?? [],
+        interpretacao: {
+          entrada: solution.interpretacao?.entrada ?? "",
+          saida: solution.interpretacao?.saida ?? "",
+          itens: solution.interpretacao?.itens ?? [],
+        },
         metodo: solution.metodo ?? { nome: "", justificativa: "", metodologia: "" },
-        modelagem: solution.modelagem ?? [],
+        eletromecanica: defaultEletromecanica(solution.eletromecanica),
         resolucao: solution.resolucao ?? [],
+        resultado_final: {
+          entrada: solution.resultado_final?.entrada ?? "",
+          saida: solution.resultado_final?.saida ?? "",
+          resultado: solution.resultado_final?.resultado ?? "",
+        },
         resultados: solution.resultados ?? [],
         ...(solution.ambiguidade !== undefined ? { ambiguidade: solution.ambiguidade } : {}),
         verificacao: {

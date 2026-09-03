@@ -6,7 +6,7 @@ import { FileText, Image as ImageIcon, Loader2, Type, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { solveExercise, type SolveResult } from "@/lib/solver.functions";
+import { solveExercise, type SolveResult, type SubBlock } from "@/lib/solver.functions";
 import { MathInline, MathLine, MathLines } from "@/lib/math-render";
 
 export const Route = createFileRoute("/")({
@@ -16,13 +16,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Envie um exercício de Controle e Servomecanismos por texto, imagem ou PDF e receba a resolução matemática completa passo a passo com o código MATLAB correspondente.",
+          "Envie um exercício de Controle e Servomecanismos por texto, imagem ou PDF e receba a resolução matemática completa, fase a fase, seguindo a metodologia de conversão eletromecânica.",
       },
       { property: "og:title", content: "Control Engineering Solver" },
       {
         property: "og:description",
         content:
-          "Resolução matemática completa de exercícios de Controle e Servomecanismos, no padrão de prova, com código MATLAB.",
+          "Resolução matemática completa de exercícios de Controle e Servomecanismos, no padrão de prova, fase a fase.",
       },
     ],
   }),
@@ -56,6 +56,42 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+/** Um dos 10 sub-blocos nomeados da cadeia eletromecânica — só renderiza se aplicável. */
+function SubBlockSection({ number, label, block }: { number: string; label: string; block: SubBlock }) {
+  if (!block.aplicavel || block.itens.length === 0) return null;
+  return (
+    <Section label={`${number}. ${label}`}>
+      <MathLines lines={block.itens} />
+    </Section>
+  );
+}
+
+function ConversionTable({ linhas }: { linhas: Array<{ mecanico: string; eletrico: string }> }) {
+  if (!linhas.length) return null;
+  return (
+    <table className="w-full border-collapse text-sm">
+      <thead>
+        <tr className="border-b border-border text-left font-mono text-xs text-muted-foreground">
+          <th className="py-1.5 pr-4">Mecânico</th>
+          <th className="py-1.5">Elétrico</th>
+        </tr>
+      </thead>
+      <tbody>
+        {linhas.map((l, i) => (
+          <tr key={i} className="border-b border-border/60 last:border-0">
+            <td className="py-1.5 pr-4 math-line">
+              <MathInline text={l.mecanico} />
+            </td>
+            <td className="py-1.5 math-line">
+              <MathInline text={l.eletrico} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function SolverPage() {
   const solve = useServerFn(solveExercise);
   const [text, setText] = useState("");
@@ -86,6 +122,7 @@ function SolverPage() {
 
   const result = mutation.data;
   const canSubmit = (text.trim().length > 0 || attachment !== null) && !mutation.isPending;
+  const eletro = result?.eletromecanica;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
@@ -162,7 +199,7 @@ function SolverPage() {
 
         {mutation.isPending && (
           <p className="mt-3 text-center font-mono text-xs text-muted-foreground">
-            ENTENDER → MODELAR → ESCOLHER MÉTODO → RESOLVER → VERIFICAR → GERAR MATLAB
+            ENTENDER → MODELAR → ESCOLHER MÉTODO → RESOLVER → VERIFICAR
           </p>
         )}
         {mutation.isError && (
@@ -194,10 +231,31 @@ function SolverPage() {
             </Section>
           ) : (
             <>
-              <Section label="Questão">
-                <p className="text-sm leading-relaxed text-foreground">
-                  <MathInline text={result.questao} />
-                </p>
+              {/* Sub-bloco 1 — Interpretação */}
+              <Section label="1. Interpretação">
+                <div className="space-y-1 math-line">
+                  {result.interpretacao.entrada && (
+                    <p>
+                      <span className="text-muted-foreground">Entrada: </span>
+                      <MathInline text={result.interpretacao.entrada} />
+                    </p>
+                  )}
+                  {result.interpretacao.saida && (
+                    <p>
+                      <span className="text-muted-foreground">Saída: </span>
+                      <MathInline text={result.interpretacao.saida} />
+                    </p>
+                  )}
+                </div>
+                {result.interpretacao.itens.length > 0 && (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 math-line">
+                    {result.interpretacao.itens.map((it, i) => (
+                      <li key={i}>
+                        <MathInline text={it} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {result.topicos.length > 0 && (
                   <p className="mt-2 font-mono text-xs text-muted-foreground">
                     tópicos: {result.topicos.join(", ")}
@@ -223,40 +281,83 @@ function SolverPage() {
                 </div>
               )}
 
-              <Section label="O que foi pedido">
-                <ul className="list-disc space-y-1 pl-5 math-line">
-                  {result.pedido.map((p, i) => (
-                    <li key={i}>
-                      <MathInline text={p} />
-                    </li>
-                  ))}
-                </ul>
-              </Section>
+              {/* Sub-blocos 2–11 — cadeia de conversão eletromecânica (só quando aplicável) */}
+              {eletro?.aplicavel && (
+                <>
+                  <SubBlockSection number="2" label="Diagrama Mecânico" block={eletro.diagrama_mecanico} />
 
-              <Section label="Dados">
-                <MathLines lines={result.dados} />
-              </Section>
+                  {eletro.tabela_conversao.aplicavel && eletro.tabela_conversao.linhas.length > 0 && (
+                    <Section label="3. Tabela de Conversão">
+                      {eletro.analogia && eletro.analogia !== "nao_aplicavel" && (
+                        <p className="mb-2 font-mono text-xs text-accent">
+                          Analogia: {eletro.analogia.replace(/_/g, "-")}
+                        </p>
+                      )}
+                      <ConversionTable linhas={eletro.tabela_conversao.linhas} />
+                    </Section>
+                  )}
 
-              <Section label="Resolução">
-                {result.modelagem.length > 0 && (
-                  <div className="mb-4">
-                    <h3 className="font-mono text-xs text-muted-foreground">Modelagem</h3>
-                    <div className="mt-1">
-                      <MathLines lines={result.modelagem} />
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-4">
-                  {result.resolucao.map((etapa, i) => (
-                    <div key={i}>
-                      <h3 className="font-mono text-xs text-muted-foreground">{etapa.titulo}</h3>
-                      <div className="mt-1">
-                        <MathLines lines={etapa.passos} />
+                  <SubBlockSection
+                    number="4"
+                    label="Conversão Mecânico → Elétrico"
+                    block={eletro.conversao_mecanico_eletrico}
+                  />
+                  <SubBlockSection number="5" label="Diagrama Elétrico Equivalente" block={eletro.diagrama_eletrico} />
+                  <SubBlockSection number="6" label="Redução do Sistema Elétrico" block={eletro.reducao_circuito} />
+                  <SubBlockSection number="7" label="Equações Elétricas" block={eletro.equacoes_eletricas} />
+                  <SubBlockSection number="8" label="Sistema Linear / Matriz" block={eletro.sistema_matricial} />
+                  <SubBlockSection number="9" label="Resolução do Sistema" block={eletro.resolucao_sistema} />
+                  <SubBlockSection
+                    number="10"
+                    label="Conversão Elétrico → Mecânico"
+                    block={eletro.conversao_eletrico_mecanico}
+                  />
+                  <SubBlockSection number="11" label="Obtenção da Saída y" block={eletro.obtencao_saida} />
+                </>
+              )}
+
+              {/* Método de Controle propriamente dito (Routh, lugar das raízes, Bode etc.) */}
+              {result.resolucao.length > 0 && (
+                <Section label="Método de Controle">
+                  <div className="space-y-4">
+                    {result.resolucao.map((etapa, i) => (
+                      <div key={i}>
+                        <h3 className="font-mono text-xs text-muted-foreground">{etapa.titulo}</h3>
+                        <div className="mt-1">
+                          <MathLines lines={etapa.passos} />
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {/* Sub-bloco 12 — Resultado final */}
+              {(result.resultado_final.entrada ||
+                result.resultado_final.saida ||
+                result.resultado_final.resultado) && (
+                <Section label="12. Resultado Final">
+                  <div className="space-y-1 math-line">
+                    {result.resultado_final.entrada && (
+                      <p>
+                        <span className="text-muted-foreground">Entrada: </span>
+                        <MathInline text={result.resultado_final.entrada} />
+                      </p>
+                    )}
+                    {result.resultado_final.saida && (
+                      <p>
+                        <span className="text-muted-foreground">Saída: </span>
+                        <MathInline text={result.resultado_final.saida} />
+                      </p>
+                    )}
+                    {result.resultado_final.resultado && (
+                      <p className="mt-2 text-base">
+                        <MathInline text={result.resultado_final.resultado} />
+                      </p>
+                    )}
+                  </div>
+                </Section>
+              )}
 
               <Section label="Resultados">
                 <div className="space-y-1">
@@ -284,7 +385,6 @@ function SolverPage() {
                   ))}
                 </div>
               </Section>
-
             </>
           )}
         </div>
