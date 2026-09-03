@@ -5,20 +5,20 @@
  * Provedor principal: API do Gemini (Google) direto, com GEMINI_API_KEY.
  * Gere uma chave grátis em https://aistudio.google.com/apikey.
  *
- * Provedor de reserva (fallback automático): GitHub Models — API gratuita,
- * compatível com formato OpenAI, autenticada com um token do GitHub (mesmo tipo
- * de fine-grained personal access token usado pra git push, com a permissão
- * "models: read"). Gere em github.com → Settings → Developer settings →
- * Personal access tokens → Fine-grained tokens, e defina GITHUB_MODELS_TOKEN
- * no seu provedor de deploy. Quando o Gemini esgota o limite gratuito (429) ou
- * fica instável (503), o sistema cai para o GitHub Models automaticamente —
- * sem isso configurado, ele só reporta o erro do Gemini normalmente.
+ * Provedor de reserva (fallback automático): Groq — API gratuita, compatível
+ * com formato OpenAI, sem cartão de crédito. Crie uma conta em console.groq.com
+ * (email ou Google), gere uma chave em console.groq.com/keys e defina
+ * GROQ_API_KEY no seu provedor de deploy. Quando o Gemini esgota o limite
+ * gratuito (429) ou fica instável (503), o sistema cai para o Groq
+ * automaticamente — sem isso configurado, ele só reporta o erro do Gemini.
+ * (O GitHub Models, cotado antes, foi desativado pela GitHub em 30/07/2026 —
+ * por isso a troca para o Groq.)
  */
 
 import { jsonrepair } from "jsonrepair";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const GITHUB_MODELS_URL = "https://models.github.ai/inference/chat/completions";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export const MODELS = {
   /** Leitura multimodal (imagem/PDF) e classificação — barato/rápido. */
@@ -27,10 +27,12 @@ export const MODELS = {
   reasoning: "gemini-3.5-flash",
 } as const;
 
-/** Modelos usados no provedor de reserva (GitHub Models) quando o Gemini falha. */
+/** Modelos usados no provedor de reserva (Groq) quando o Gemini falha. */
 const FALLBACK_MODELS = {
-  fast: "openai/gpt-4o-mini",
-  reasoning: "openai/gpt-4o-mini",
+  /** Multimodal (entende imagem) — usado no lugar de MODELS.fast. */
+  fast: "meta-llama/llama-4-scout-17b-16e-instruct",
+  /** Mais forte para raciocínio — usado no lugar de MODELS.reasoning. */
+  reasoning: "llama-3.3-70b-versatile",
 } as const;
 
 export type TextPart = { type: "text"; text: string };
@@ -171,7 +173,7 @@ async function callGemini({ model, messages, json }: CallOptions, apiKey: string
   throw lastError ?? new LlmError(503, "Falha temporária ao chamar o Gemini.");
 }
 
-// ─────────────────────── GitHub Models (provedor de reserva) ───────────────────────
+// ─────────────────────────────── Groq (provedor de reserva) ───────────────────────────────
 
 function toOpenAiMessages(messages: LlmMessage[]): Array<{ role: string; content: unknown }> {
   return messages.map((m) => {
@@ -189,7 +191,7 @@ function fallbackModelFor(model: string | undefined): string {
   return model === MODELS.fast ? FALLBACK_MODELS.fast : FALLBACK_MODELS.reasoning;
 }
 
-async function callGithubModels({ model, messages, json }: CallOptions, token: string): Promise<string> {
+async function callGroq({ model, messages, json }: CallOptions, apiKey: string): Promise<string> {
   const body: Record<string, unknown> = {
     model: fallbackModelFor(model),
     messages: toOpenAiMessages(messages),
@@ -200,9 +202,9 @@ async function callGithubModels({ model, messages, json }: CallOptions, token: s
   let lastError: LlmError | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(GITHUB_MODELS_URL, {
+    const res = await fetch(GROQ_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(body),
     });
 
@@ -212,53 +214,61 @@ async function callGithubModels({ model, messages, json }: CallOptions, token: s
     }
 
     const detail = await res.text().catch(() => "");
+    let message = detail;
+    try {
+      const parsed = JSON.parse(detail) as { error?: { message?: string } };
+      message = parsed.error?.message ?? detail;
+    } catch {
+      /* texto puro */
+    }
+
     if (res.status === 429 && attempt < MAX_ATTEMPTS) {
-      lastError = new LlmError(429, "Limite gratuito do GitHub Models atingido no momento.");
+      lastError = new LlmError(429, "Limite gratuito do Groq atingido no momento.");
       await sleep(800 * attempt);
       continue;
     }
     if (res.status === 401 || res.status === 403) {
-      throw new LlmError(res.status, "GITHUB_MODELS_TOKEN inválido, expirado ou sem a permissão \"models: read\".");
+      throw new LlmError(res.status, "GROQ_API_KEY inválida ou sem permissão.");
     }
     if (res.status === 429) {
-      throw new LlmError(429, "Limite gratuito do GitHub Models também atingido no momento. Tente novamente mais tarde.");
+      throw new LlmError(429, "Limite gratuito do Groq também atingido no momento. Tente novamente mais tarde.");
     }
-    throw new LlmError(res.status, detail || `Falha no provedor de reserva GitHub Models (${res.status}).`);
+    throw new LlmError(res.status, message || `Falha no provedor de reserva Groq (${res.status}).`);
   }
 
-  throw lastError ?? new LlmError(503, "Falha temporária ao chamar o GitHub Models.");
+  throw lastError ?? new LlmError(503, "Falha temporária ao chamar o Groq.");
 }
 
 // ───────────────────────────────── Ponto único de entrada ─────────────────────────────────
 
 export async function callLlm(opts: CallOptions): Promise<string> {
   const geminiKey = process.env["GEMINI_API_KEY"];
-  const githubToken = process.env["GITHUB_MODELS_TOKEN"];
+  const groqKey = process.env["GROQ_API_KEY"];
 
   if (geminiKey) {
     try {
       return await callGemini(opts, geminiKey);
     } catch (error) {
       const isQuotaOrOverload = error instanceof LlmError && (error.status === 429 || error.status === 503);
-      if (!isQuotaOrOverload || !githubToken) throw error;
+      if (!isQuotaOrOverload || !groqKey) throw error;
       // Gemini esgotou/instável e há um provedor de reserva configurado: tenta ele antes de desistir.
     }
   }
 
-  if (githubToken) {
-    return await callGithubModels(opts, githubToken);
+  if (groqKey) {
+    return await callGroq(opts, groqKey);
   }
 
   if (!geminiKey) {
     throw new LlmError(
       401,
-      "Nenhuma chave de IA configurada no servidor. Defina GEMINI_API_KEY (aistudio.google.com/apikey) e, opcionalmente, GITHUB_MODELS_TOKEN como provedor de reserva.",
+      "Nenhuma chave de IA configurada no servidor. Defina GEMINI_API_KEY (aistudio.google.com/apikey) e, opcionalmente, GROQ_API_KEY como provedor de reserva (console.groq.com/keys).",
     );
   }
 
   throw new LlmError(
     429,
-    "Limite gratuito do Gemini atingido e nenhum provedor de reserva (GITHUB_MODELS_TOKEN) configurado. Aguarde alguns instantes e tente novamente.",
+    "Limite gratuito do Gemini atingido e nenhum provedor de reserva (GROQ_API_KEY) configurado. Aguarde alguns instantes e tente novamente.",
   );
 }
 
