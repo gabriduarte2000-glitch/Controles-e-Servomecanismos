@@ -48,7 +48,6 @@ export type SolveResult = {
     escolhida?: string;
     motivo?: string;
   };
-  matlab: string;
   verificacao: {
     aprovado: boolean;
     observacoes: string[];
@@ -205,7 +204,7 @@ export const solveExercise = createServerFn({ method: "POST" })
               { role: "assistant", content: raw },
               {
                 role: "user",
-                content: `O VERIFICADOR MATEMÁTICO apontou os problemas abaixo. Corrija a resolução inteira (inclusive o MATLAB) e responda no mesmo formato JSON.\nERROS: ${JSON.stringify(
+                content: `O VERIFICADOR MATEMÁTICO apontou os problemas abaixo. Corrija a resolução inteira e responda no mesmo formato JSON.\nERROS: ${JSON.stringify(
                   verify.erros,
                 )}\nMOTOR MATEMÁTICO: ${motorMatematico ?? "não aplicável"}`,
               },
@@ -232,7 +231,6 @@ export const solveExercise = createServerFn({ method: "POST" })
         resolucao: solution.resolucao ?? [],
         resultados: solution.resultados ?? [],
         ...(solution.ambiguidade !== undefined ? { ambiguidade: solution.ambiguidade } : {}),
-        matlab: solution.matlab ?? "",
         verificacao: {
           aprovado,
           observacoes,

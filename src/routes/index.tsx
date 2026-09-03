@@ -285,22 +285,6 @@ function SolverPage() {
                 </div>
               </Section>
 
-              <Section label="MATLAB">
-                <pre className="overflow-x-auto rounded-md bg-background/60 p-4 math-line">
-                  <code>{result.matlab}</code>
-                </pre>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => void navigator.clipboard.writeText(result.matlab)}
-                >
-                  Copiar código
-                </Button>
-                <p className="mt-2 font-mono text-xs text-muted-foreground">
-                  O código é apresentado, não executado — nenhum gráfico é renderizado aqui.
-                </p>
-              </Section>
             </>
           )}
         </div>

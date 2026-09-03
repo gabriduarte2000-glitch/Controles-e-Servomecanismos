@@ -7,6 +7,9 @@ import "katex/dist/katex.min.css";
  * - Texto com trechos matemáticos pontuais: "...  $\zeta = 0.5$  ..."
  * - Linha inteira é uma equação/matriz: "$$1 + KG(s)H(s) = 0$$"
  * - Linha inteira é um diagrama ASCII: "```\n[desenho]\n```"
+ * O modelo às vezes usa $$...$$ mesmo embutido numa frase (fora do padrão pedido) —
+ * o parser abaixo entende os dois casos misturados na mesma linha, e qualquer "$"
+ * que sobrar sem par é removido antes de exibir (nunca aparece $ literal na tela).
  * Qualquer erro de LaTeX cai de volta para o texto puro, nunca quebra a tela.
  */
 
@@ -18,15 +21,27 @@ function renderTex(tex: string, displayMode: boolean): string {
   }
 }
 
-/** Divide um texto em segmentos, renderizando cada trecho $...$ como LaTeX inline. */
+// Tenta casar primeiro um bloco $$...$$ e, se não houver, um trecho $...$.
+const MATH_SEGMENT = /(\$\$[^$]+\$\$|\$[^$]+\$)/g;
+
+/** Divide um texto em segmentos, renderizando cada trecho $...$/$$...$$ como LaTeX inline. */
 export function MathInline({ text }: { text: string }) {
   if (!text || !text.includes("$")) return <>{text}</>;
 
-  const parts = text.split(/(\$[^$]+\$)/g);
+  const parts = text.split(MATH_SEGMENT);
   return (
     <>
       {parts.map((part, i) => {
-        if (part.length > 2 && part.startsWith("$") && part.endsWith("$")) {
+        if (part.startsWith("$$") && part.endsWith("$$") && part.length > 4) {
+          return (
+            <span
+              key={i}
+              className="katex-inline"
+              dangerouslySetInnerHTML={{ __html: renderTex(part.slice(2, -2), false) }}
+            />
+          );
+        }
+        if (part.startsWith("$") && part.endsWith("$") && part.length > 2) {
           return (
             <span
               key={i}
@@ -35,7 +50,8 @@ export function MathInline({ text }: { text: string }) {
             />
           );
         }
-        return <span key={i}>{part}</span>;
+        // Texto puro: remove qualquer "$" órfão que não fez par (nunca mostra $ literal).
+        return <span key={i}>{part.includes("$") ? part.replace(/\$/g, "") : part}</span>;
       })}
     </>
   );
@@ -49,7 +65,7 @@ export function MathLine({ line, className = "" }: { line: string; className?: s
     const content = trimmed.replace(/^```[a-zA-Z]*\n?/, "").replace(/```\s*$/, "");
     return (
       <pre
-        className={`overflow-x-auto rounded-md border border-border bg-background/60 p-3 font-mono text-xs leading-relaxed text-foreground ${className ?? ""}`}
+        className={`overflow-x-auto rounded-md border border-border bg-background/60 p-3 font-mono text-xs leading-relaxed text-foreground ${className}`}
       >
         <code>{content}</code>
       </pre>
@@ -59,14 +75,14 @@ export function MathLine({ line, className = "" }: { line: string; className?: s
   if (trimmed.length > 4 && trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
     return (
       <div
-        className={`my-1 overflow-x-auto text-foreground ${className ?? ""}`}
+        className={`my-1 overflow-x-auto text-foreground ${className}`}
         dangerouslySetInnerHTML={{ __html: renderTex(trimmed.slice(2, -2), true) }}
       />
     );
   }
 
   return (
-    <p className={`math-line ${className ?? ""}`}>
+    <p className={`math-line ${className}`}>
       <MathInline text={line} />
     </p>
   );
