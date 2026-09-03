@@ -179,16 +179,32 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
 }
 
 /** Extrai o primeiro objeto JSON de uma resposta (tolerante a cercas de código). */
+/** Remove problemas comuns de JSON "quase válido" vindo de LLM: vírgula sobrando antes de `}`/`]`. */
+function repairJson(s: string): string {
+  return s.replace(/,(\s*[}\]])/g, "$1");
+}
+
 export function parseJsonLoose<T>(raw: string): T {
   const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```\s*$/, "").trim();
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      return JSON.parse(cleaned.slice(start, end + 1)) as T;
-    }
-    throw new Error("Resposta do modelo não é um JSON válido.");
+
+  const attempts = [cleaned, repairJson(cleaned)];
+
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    const sliced = cleaned.slice(start, end + 1);
+    attempts.push(sliced, repairJson(sliced));
   }
+
+  let lastError: unknown;
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt) as T;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    `Resposta do modelo não é um JSON válido (${lastError instanceof Error ? lastError.message : "erro desconhecido"}).`,
+  );
 }
