@@ -311,13 +311,13 @@ function SolverPage() {
                   <SubBlockSection number="5" label="Diagrama Elétrico Equivalente" block={eletro.diagrama_eletrico} />
                   <SubBlockSection number="6" label="Redução do Sistema Elétrico" block={eletro.reducao_circuito} />
                   <SubBlockSection number="7" label="Equações Elétricas" block={eletro.equacoes_eletricas} />
-                  <SubBlockSection number="8" label="Sistema Linear / Matriz" block={eletro.sistema_matricial} />
-                  <SubBlockSection number="9" label="Resolução do Sistema" block={eletro.resolucao_sistema} />
                   <SubBlockSection
-                    number="10"
+                    number="8"
                     label="Conversão Elétrico → Mecânico"
                     block={eletro.conversao_eletrico_mecanico}
                   />
+                  <SubBlockSection number="9" label="Sistema Linear / Matriz" block={eletro.sistema_matricial} />
+                  <SubBlockSection number="10" label="Resolução do Sistema" block={eletro.resolucao_sistema} />
                   <SubBlockSection number="11" label="Obtenção da Saída y" block={eletro.obtencao_saida} />
                 </>
               )}

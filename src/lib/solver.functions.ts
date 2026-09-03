@@ -44,9 +44,9 @@ export type CadeiaEletromecanica = {
   diagrama_eletrico: SubBlock;
   reducao_circuito: SubBlock;
   equacoes_eletricas: SubBlock;
+  conversao_eletrico_mecanico: SubBlock;
   sistema_matricial: SubBlock;
   resolucao_sistema: SubBlock;
-  conversao_eletrico_mecanico: SubBlock;
   obtencao_saida: SubBlock;
 };
 
@@ -104,9 +104,9 @@ function defaultEletromecanica(v: unknown): CadeiaEletromecanica {
     diagrama_eletrico: subBlock(o.diagrama_eletrico),
     reducao_circuito: subBlock(o.reducao_circuito),
     equacoes_eletricas: subBlock(o.equacoes_eletricas),
+    conversao_eletrico_mecanico: subBlock(o.conversao_eletrico_mecanico),
     sistema_matricial: subBlock(o.sistema_matricial),
     resolucao_sistema: subBlock(o.resolucao_sistema),
-    conversao_eletrico_mecanico: subBlock(o.conversao_eletrico_mecanico),
     obtencao_saida: subBlock(o.obtencao_saida),
   };
 }

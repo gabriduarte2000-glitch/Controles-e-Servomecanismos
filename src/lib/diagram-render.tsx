@@ -1,3 +1,4 @@
+import katex from "katex";
 import type { DiagramaEstruturado, Elemento, ElementoTipo, No } from "./diagram-types";
 
 /**
@@ -10,7 +11,43 @@ import type { DiagramaEstruturado, Elemento, ElementoTipo, No } from "./diagram-
  * quando há mais de um em paralelo entre o mesmo par). Ramos que terminam em nó de
  * terra viram uma queda vertical até um trilho de referência comum, com o símbolo
  * de terra desenhado uma vez.
+ *
+ * Rótulos passam pelo KaTeX (via foreignObject) para renderizar símbolos de verdade
+ * (ω, τ, subscritos) em vez do código LaTeX cru — <text> do SVG não entende LaTeX.
  */
+
+function renderLabelHtml(raw: string): string {
+  const tex = raw.trim().replace(/^\$+/, "").replace(/\$+$/, "");
+  try {
+    return katex.renderToString(tex, { throwOnError: false, displayMode: false, strict: "ignore" });
+  } catch {
+    return tex;
+  }
+}
+
+function KatexLabel({
+  x,
+  y,
+  text,
+  width = 96,
+}: {
+  x: number;
+  y: number;
+  text: string;
+  width?: number;
+}) {
+  if (!text) return null;
+  return (
+    <foreignObject x={x - width / 2} y={y - 11} width={width} height={22} style={{ overflow: "visible" }}>
+      <div
+        // @ts-expect-error -- xmlns é necessário dentro de foreignObject em SVG
+        xmlns="http://www.w3.org/1999/xhtml"
+        style={{ textAlign: "center", fontSize: 12, lineHeight: "22px", color: "currentColor" }}
+        dangerouslySetInnerHTML={{ __html: renderLabelHtml(text) }}
+      />
+    </foreignObject>
+  );
+}
 
 const RAIL_Y = 70;
 const X_SPACING = 150;
@@ -170,18 +207,11 @@ function Glyph({ tipo }: { tipo: Branch["itens"][number]["tipo"] }) {
 
 function Element({ x, y, vertical, item }: { x: number; y: number; vertical: boolean; item: Branch["itens"][number] }) {
   return (
-    <g transform={`translate(${x},${y}) rotate(${vertical ? 90 : 0})`}>
-      <Glyph tipo={item.tipo} />
-      <text
-        x={0}
-        y={vertical ? -18 : 26}
-        fontSize={12}
-        textAnchor="middle"
-        className="fill-current"
-        transform={vertical ? `rotate(${-90})` : undefined}
-      >
-        {item.label.replace(/\$/g, "")}
-      </text>
+    <g>
+      <g transform={`translate(${x},${y}) rotate(${vertical ? 90 : 0})`}>
+        <Glyph tipo={item.tipo} />
+      </g>
+      <KatexLabel x={vertical ? x + 34 : x} y={vertical ? y : y + 26} text={item.label} width={vertical ? 70 : 96} />
     </g>
   );
 }
@@ -303,11 +333,7 @@ function NodeDot({ n, x, y }: { n: No; x: number; y: number }) {
   return (
     <g>
       <circle cx={x} cy={y} r={2.5} className="fill-current" />
-      {n.label && (
-        <text x={x} y={y - 14} fontSize={12} textAnchor="middle" className="fill-current">
-          {n.label.replace(/\$/g, "")}
-        </text>
-      )}
+      {n.label && <KatexLabel x={x} y={y - 20} text={n.label} />}
     </g>
   );
 }
