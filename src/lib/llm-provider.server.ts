@@ -12,9 +12,9 @@ const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models
 
 export const MODELS = {
   /** Leitura multimodal (imagem/PDF) e classificação — barato/rápido. */
-  fast: "gemini-flash-lite-latest",
+  fast: "gemini-2.5-flash-lite",
   /** Resolução matemática e verificação — raciocínio. */
-  reasoning: "gemini-flash-latest",
+  reasoning: "gemini-2.5-flash",
 } as const;
 
 export type TextPart = { type: "text"; text: string };
@@ -88,6 +88,10 @@ function toGeminiRequest(messages: LlmMessage[]): {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function callLlm({ model, messages, json }: CallOptions): Promise<string> {
   const apiKey = process.env["GEMINI_API_KEY"];
   if (!apiKey) {
@@ -106,16 +110,32 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
     ...(json ? { generationConfig: { responseMimeType: "application/json" } } : {}),
   };
 
-  const res = await fetch(`${GEMINI_BASE_URL}/${modelId}:generateContent`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(body),
-  });
+  const MAX_ATTEMPTS = 3;
+  let lastError: LlmError | null = null;
 
-  if (!res.ok) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`${GEMINI_BASE_URL}/${modelId}:generateContent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        promptFeedback?: { blockReason?: string };
+      };
+
+      if (!data.candidates?.length && data.promptFeedback?.blockReason) {
+        throw new LlmError(400, `Conteúdo bloqueado pela API do Gemini (${data.promptFeedback.blockReason}).`);
+      }
+
+      return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+    }
+
     const detail = await res.text().catch(() => "");
     let message = detail;
     try {
@@ -124,8 +144,26 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
     } catch {
       /* texto puro */
     }
+
+    // 429 (limite) e 503 (modelo sobrecarregado no lado do Google) são transitórios: tenta de novo com backoff.
+    const isTransient = res.status === 429 || res.status === 503;
+    if (isTransient && attempt < MAX_ATTEMPTS) {
+      lastError =
+        res.status === 429
+          ? new LlmError(429, "Limite gratuito do Gemini atingido no momento.")
+          : new LlmError(503, "Modelo do Gemini com alta demanda no momento (instabilidade do lado do Google).");
+      await sleep(600 * attempt + Math.floor(Math.random() * 300));
+      continue;
+    }
+
     if (res.status === 429) {
       throw new LlmError(429, "Limite gratuito do Gemini atingido no momento. Aguarde alguns segundos e tente novamente.");
+    }
+    if (res.status === 503) {
+      throw new LlmError(
+        503,
+        "O modelo do Gemini está com alta demanda no momento (instabilidade temporária do lado do Google, não é um problema de configuração). Tente novamente em instantes.",
+      );
     }
     if (res.status === 403 || res.status === 401) {
       throw new LlmError(res.status, message || "Chave GEMINI_API_KEY inválida ou sem permissão.");
@@ -133,16 +171,11 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
     throw new LlmError(res.status, message || `Falha na chamada de IA (${res.status}).`);
   }
 
-  const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    promptFeedback?: { blockReason?: string };
-  };
-
-  if (!data.candidates?.length && data.promptFeedback?.blockReason) {
-    throw new LlmError(400, `Conteúdo bloqueado pela API do Gemini (${data.promptFeedback.blockReason}).`);
-  }
-
-  return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  // Só chega aqui se todas as tentativas caíram em erro transitório.
+  throw (
+    lastError ??
+    new LlmError(503, "Falha temporária ao chamar a IA. Tente novamente em instantes.")
+  );
 }
 
 /** Extrai o primeiro objeto JSON de uma resposta (tolerante a cercas de código). */
