@@ -30,9 +30,9 @@ export const MODELS = {
 /** Modelos usados no provedor de reserva (Groq) quando o Gemini falha. */
 const FALLBACK_MODELS = {
   /** Multimodal (entende imagem) — usado no lugar de MODELS.fast. */
-  fast: "meta-llama/llama-4-scout-17b-16e-instruct",
+  fast: "qwen/qwen3.6-27b",
   /** Mais forte para raciocínio — usado no lugar de MODELS.reasoning. */
-  reasoning: "llama-3.3-70b-versatile",
+  reasoning: "openai/gpt-oss-120b",
 } as const;
 
 export type TextPart = { type: "text"; text: string };
