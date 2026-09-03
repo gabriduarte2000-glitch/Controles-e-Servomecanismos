@@ -2,21 +2,35 @@
  * LLMProvider — única camada de acesso ao modelo de linguagem.
  * Trocar de provedor/modelo no futuro exige mudar apenas este arquivo.
  *
- * Usa a API do Gemini (Google) diretamente, com uma chave própria (GEMINI_API_KEY),
- * independente da conta/projeto Lovable. Gere uma chave grátis em
- * https://aistudio.google.com/apikey e configure GEMINI_API_KEY nas variáveis
- * de ambiente do seu provedor de deploy (Vercel: Project Settings → Environment Variables).
+ * Provedor principal: API do Gemini (Google) direto, com GEMINI_API_KEY.
+ * Gere uma chave grátis em https://aistudio.google.com/apikey.
+ *
+ * Provedor de reserva (fallback automático): GitHub Models — API gratuita,
+ * compatível com formato OpenAI, autenticada com um token do GitHub (mesmo tipo
+ * de fine-grained personal access token usado pra git push, com a permissão
+ * "models: read"). Gere em github.com → Settings → Developer settings →
+ * Personal access tokens → Fine-grained tokens, e defina GITHUB_MODELS_TOKEN
+ * no seu provedor de deploy. Quando o Gemini esgota o limite gratuito (429) ou
+ * fica instável (503), o sistema cai para o GitHub Models automaticamente —
+ * sem isso configurado, ele só reporta o erro do Gemini normalmente.
  */
 
 import { jsonrepair } from "jsonrepair";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const GITHUB_MODELS_URL = "https://models.github.ai/inference/chat/completions";
 
 export const MODELS = {
   /** Leitura multimodal (imagem/PDF) e classificação — barato/rápido. */
   fast: "gemini-3.5-flash-lite",
   /** Resolução matemática e verificação — raciocínio. */
   reasoning: "gemini-3.5-flash",
+} as const;
+
+/** Modelos usados no provedor de reserva (GitHub Models) quando o Gemini falha. */
+const FALLBACK_MODELS = {
+  fast: "openai/gpt-4o-mini",
+  reasoning: "openai/gpt-4o-mini",
 } as const;
 
 export type TextPart = { type: "text"; text: string };
@@ -46,8 +60,9 @@ type CallOptions = {
   json?: boolean;
 };
 
-type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
-type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** Extrai mimeType e base64 de uma data URL (ex.: "data:image/png;base64,AAAA..."). */
 function dataUrlToInlineData(dataUrl: string): { mimeType: string; data: string } {
@@ -57,6 +72,11 @@ function dataUrlToInlineData(dataUrl: string): { mimeType: string; data: string 
   }
   return { mimeType: match[1]!, data: match[2]! };
 }
+
+// ───────────────────────────── Gemini (provedor principal) ─────────────────────────────
+
+type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 
 function toGeminiRequest(messages: LlmMessage[]): {
   systemInstruction?: { parts: { text: string }[] };
@@ -90,19 +110,7 @@ function toGeminiRequest(messages: LlmMessage[]): {
   };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function callLlm({ model, messages, json }: CallOptions): Promise<string> {
-  const apiKey = process.env["GEMINI_API_KEY"];
-  if (!apiKey) {
-    throw new LlmError(
-      401,
-      "Chave da IA (GEMINI_API_KEY) não configurada no servidor. Gere uma em Google AI Studio e defina a variável de ambiente no seu provedor de deploy.",
-    );
-  }
-
+async function callGemini({ model, messages, json }: CallOptions, apiKey: string): Promise<string> {
   const { systemInstruction, contents } = toGeminiRequest(messages);
   const modelId = model ?? MODELS.reasoning;
 
@@ -118,10 +126,7 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const res = await fetch(`${GEMINI_BASE_URL}/${modelId}:generateContent`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify(body),
     });
 
@@ -130,11 +135,9 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
         candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
         promptFeedback?: { blockReason?: string };
       };
-
       if (!data.candidates?.length && data.promptFeedback?.blockReason) {
         throw new LlmError(400, `Conteúdo bloqueado pela API do Gemini (${data.promptFeedback.blockReason}).`);
       }
-
       return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
     }
 
@@ -147,7 +150,6 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
       /* texto puro */
     }
 
-    // 429 (limite) e 503 (modelo sobrecarregado no lado do Google) são transitórios: tenta de novo com backoff.
     const isTransient = res.status === 429 || res.status === 503;
     if (isTransient && attempt < MAX_ATTEMPTS) {
       lastError =
@@ -158,25 +160,105 @@ export async function callLlm({ model, messages, json }: CallOptions): Promise<s
       continue;
     }
 
-    if (res.status === 429) {
-      throw new LlmError(429, "Limite gratuito do Gemini atingido no momento. Aguarde alguns segundos e tente novamente.");
-    }
-    if (res.status === 503) {
-      throw new LlmError(
-        503,
-        "O modelo do Gemini está com alta demanda no momento (instabilidade temporária do lado do Google, não é um problema de configuração). Tente novamente em instantes.",
-      );
-    }
+    if (res.status === 429) throw new LlmError(429, "Limite gratuito do Gemini atingido no momento.");
+    if (res.status === 503) throw new LlmError(503, "O modelo do Gemini está com alta demanda no momento.");
     if (res.status === 403 || res.status === 401) {
       throw new LlmError(res.status, message || "Chave GEMINI_API_KEY inválida ou sem permissão.");
     }
     throw new LlmError(res.status, message || `Falha na chamada de IA (${res.status}).`);
   }
 
-  // Só chega aqui se todas as tentativas caíram em erro transitório.
-  throw (
-    lastError ??
-    new LlmError(503, "Falha temporária ao chamar a IA. Tente novamente em instantes.")
+  throw lastError ?? new LlmError(503, "Falha temporária ao chamar o Gemini.");
+}
+
+// ─────────────────────── GitHub Models (provedor de reserva) ───────────────────────
+
+function toOpenAiMessages(messages: LlmMessage[]): Array<{ role: string; content: unknown }> {
+  return messages.map((m) => {
+    if (typeof m.content === "string") return { role: m.role, content: m.content };
+    const content = m.content.map((part) => {
+      if (part.type === "text") return { type: "text", text: part.text };
+      if (part.type === "image_url") return { type: "image_url", image_url: { url: part.image_url.url } };
+      return { type: "text", text: `[Arquivo "${part.file.filename}" anexado — não suportado no provedor de reserva.]` };
+    });
+    return { role: m.role, content };
+  });
+}
+
+function fallbackModelFor(model: string | undefined): string {
+  return model === MODELS.fast ? FALLBACK_MODELS.fast : FALLBACK_MODELS.reasoning;
+}
+
+async function callGithubModels({ model, messages, json }: CallOptions, token: string): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: fallbackModelFor(model),
+    messages: toOpenAiMessages(messages),
+    ...(json ? { response_format: { type: "json_object" } } : {}),
+  };
+
+  const MAX_ATTEMPTS = 2;
+  let lastError: LlmError | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(GITHUB_MODELS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      return data.choices?.[0]?.message?.content ?? "";
+    }
+
+    const detail = await res.text().catch(() => "");
+    if (res.status === 429 && attempt < MAX_ATTEMPTS) {
+      lastError = new LlmError(429, "Limite gratuito do GitHub Models atingido no momento.");
+      await sleep(800 * attempt);
+      continue;
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new LlmError(res.status, "GITHUB_MODELS_TOKEN inválido, expirado ou sem a permissão \"models: read\".");
+    }
+    if (res.status === 429) {
+      throw new LlmError(429, "Limite gratuito do GitHub Models também atingido no momento. Tente novamente mais tarde.");
+    }
+    throw new LlmError(res.status, detail || `Falha no provedor de reserva GitHub Models (${res.status}).`);
+  }
+
+  throw lastError ?? new LlmError(503, "Falha temporária ao chamar o GitHub Models.");
+}
+
+// ───────────────────────────────── Ponto único de entrada ─────────────────────────────────
+
+export async function callLlm(opts: CallOptions): Promise<string> {
+  const geminiKey = process.env["GEMINI_API_KEY"];
+  const githubToken = process.env["GITHUB_MODELS_TOKEN"];
+
+  if (geminiKey) {
+    try {
+      return await callGemini(opts, geminiKey);
+    } catch (error) {
+      const isQuotaOrOverload = error instanceof LlmError && (error.status === 429 || error.status === 503);
+      if (!isQuotaOrOverload || !githubToken) throw error;
+      // Gemini esgotou/instável e há um provedor de reserva configurado: tenta ele antes de desistir.
+    }
+  }
+
+  if (githubToken) {
+    return await callGithubModels(opts, githubToken);
+  }
+
+  if (!geminiKey) {
+    throw new LlmError(
+      401,
+      "Nenhuma chave de IA configurada no servidor. Defina GEMINI_API_KEY (aistudio.google.com/apikey) e, opcionalmente, GITHUB_MODELS_TOKEN como provedor de reserva.",
+    );
+  }
+
+  throw new LlmError(
+    429,
+    "Limite gratuito do Gemini atingido e nenhum provedor de reserva (GITHUB_MODELS_TOKEN) configurado. Aguarde alguns instantes e tente novamente.",
   );
 }
 
@@ -204,7 +286,6 @@ export function parseJsonLoose<T>(raw: string): T {
     }
   }
 
-  // Última tentativa: reparo genérico (aspas, vírgulas, chaves não fechadas etc.) via jsonrepair.
   try {
     return JSON.parse(jsonrepair(sliced)) as T;
   } catch (error) {
