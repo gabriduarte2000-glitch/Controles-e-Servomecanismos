@@ -195,6 +195,7 @@ async function callGroq({ model, messages, json }: CallOptions, apiKey: string):
   const body: Record<string, unknown> = {
     model: fallbackModelFor(model),
     messages: toOpenAiMessages(messages),
+    max_completion_tokens: 8192,
     ...(json ? { response_format: { type: "json_object" } } : {}),
   };
 
@@ -230,7 +231,7 @@ async function callGroq({ model, messages, json }: CallOptions, apiKey: string):
     // texto bruto gerado em failed_generation — geralmente é JSON válido ou quase.
     // Aproveita isso em vez de descartar; o parseJsonLoose downstream (com jsonrepair)
     // consegue salvar a maioria dos casos.
-    if (res.status === 400 && failedGeneration) {
+    if (failedGeneration) {
       return failedGeneration;
     }
 
