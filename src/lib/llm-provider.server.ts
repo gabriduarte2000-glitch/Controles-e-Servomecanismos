@@ -8,6 +8,8 @@
  * de ambiente do seu provedor de deploy (Vercel: Project Settings → Environment Variables).
  */
 
+import { jsonrepair } from "jsonrepair";
+
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export const MODELS = {
@@ -187,14 +189,11 @@ function repairJson(s: string): string {
 export function parseJsonLoose<T>(raw: string): T {
   const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```\s*$/, "").trim();
 
-  const attempts = [cleaned, repairJson(cleaned)];
-
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    const sliced = cleaned.slice(start, end + 1);
-    attempts.push(sliced, repairJson(sliced));
-  }
+  const sliced = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+
+  const attempts = [cleaned, repairJson(cleaned), sliced, repairJson(sliced)];
 
   let lastError: unknown;
   for (const attempt of attempts) {
@@ -204,6 +203,14 @@ export function parseJsonLoose<T>(raw: string): T {
       lastError = error;
     }
   }
+
+  // Última tentativa: reparo genérico (aspas, vírgulas, chaves não fechadas etc.) via jsonrepair.
+  try {
+    return JSON.parse(jsonrepair(sliced)) as T;
+  } catch (error) {
+    lastError = error;
+  }
+
   throw new Error(
     `Resposta do modelo não é um JSON válido (${lastError instanceof Error ? lastError.message : "erro desconhecido"}).`,
   );
