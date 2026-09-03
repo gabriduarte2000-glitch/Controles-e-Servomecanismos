@@ -215,11 +215,23 @@ async function callGroq({ model, messages, json }: CallOptions, apiKey: string):
 
     const detail = await res.text().catch(() => "");
     let message = detail;
+    let failedGeneration: string | undefined;
     try {
-      const parsed = JSON.parse(detail) as { error?: { message?: string } };
+      const parsed = JSON.parse(detail) as {
+        error?: { message?: string; code?: string; failed_generation?: string };
+      };
       message = parsed.error?.message ?? detail;
+      failedGeneration = parsed.error?.failed_generation;
     } catch {
       /* texto puro */
+    }
+
+    // O Groq às vezes reprova a validação estrita do "modo JSON" mas ainda devolve o
+    // texto bruto gerado em failed_generation — geralmente é JSON válido ou quase.
+    // Aproveita isso em vez de descartar; o parseJsonLoose downstream (com jsonrepair)
+    // consegue salvar a maioria dos casos.
+    if (res.status === 400 && failedGeneration) {
+      return failedGeneration;
     }
 
     if (res.status === 429 && attempt < MAX_ATTEMPTS) {
