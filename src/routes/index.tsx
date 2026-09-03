@@ -237,21 +237,6 @@ function SolverPage() {
                 <MathLines lines={result.dados} />
               </Section>
 
-              <Section label="Método utilizado">
-                <p className="math-line">
-                  <MathInline text={result.metodo.nome} />
-                </p>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  Justificativa: <MathInline text={result.metodo.justificativa} />
-                </p>
-                {result.metodo.metodologia && (
-                  <p className="mt-2 font-mono text-xs text-accent">
-                    Metodologia: {result.metodo.metodologia}
-                    {result.metodo.complemento ? ` · Complemento: ${result.metodo.complemento}` : ""}
-                  </p>
-                )}
-              </Section>
-
               <Section label="Resolução">
                 {result.modelagem.length > 0 && (
                   <div className="mb-4">

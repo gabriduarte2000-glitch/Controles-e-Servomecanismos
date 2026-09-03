@@ -132,6 +132,13 @@ export const solveExercise = createServerFn({ method: "POST" })
       });
       const analysis = parseJsonLoose<Record<string, unknown>>(rawAnalysis);
 
+      const analysisTopics = Array.isArray((analysis as { topic?: unknown }).topic)
+        ? ((analysis as { topic: unknown[] }).topic.filter((t) => typeof t === "string") as string[])
+        : [];
+      const requerAnalogia =
+        (analysis as { requer_analogia_eletromecanica?: unknown }).requer_analogia_eletromecanica === true ||
+        analysisTopics.includes("analogia_eletromecanica");
+
       // 3) CONTROL SOLVER
       const solveMessages: LlmMessage[] = [
         { role: "system", content: SYSTEM_CONTROL_SOLVER },
@@ -139,7 +146,11 @@ export const solveExercise = createServerFn({ method: "POST" })
           role: "user",
           content: `PROBLEMA RECONSTRUÍDO (dados):\n${problemaReconstruido}\n\nANÁLISE ESTRUTURADA (dados):\n${JSON.stringify(
             analysis,
-          )}\n\nResolva completamente.`,
+          )}\n\n${
+            requerAnalogia
+              ? "ATENÇÃO: este problema foi classificado como exigindo a METODOLOGIA DE ANALOGIA ELETROMECÂNICA EM 6 FASES definida no seu system prompt. É OBRIGATÓRIO segui-la à risca: 'modelagem' com exatamente as fases 1 e 2 (cada uma com diagrama ASCII), e as 4 primeiras entradas de 'resolucao' sendo as fases 3, 4, 5 (em 5.1/5.2/5.3) e 6, nesta ordem, com a notação de variável por elemento (V_C1, I_L1 etc.). NÃO responda com uma modelagem genérica.\n\n"
+              : ""
+          }Resolva completamente.`,
         },
       ];
       let raw = await callLlm({ model: MODELS.reasoning, json: true, messages: solveMessages });
@@ -210,10 +221,6 @@ export const solveExercise = createServerFn({ method: "POST" })
         }
       }
 
-      const topics = Array.isArray((analysis as { topic?: unknown }).topic)
-        ? ((analysis as { topic: unknown[] }).topic.filter((t) => typeof t === "string") as string[])
-        : [];
-
       return {
         insuficiente: Boolean(solution.insuficiente),
         faltando: solution.faltando ?? [],
@@ -233,7 +240,7 @@ export const solveExercise = createServerFn({ method: "POST" })
           ...(motorMatematico !== undefined ? { motor_matematico: motorMatematico } : {}),
         },
         ilegivel: extraction.ilegivel?.filter(Boolean) ?? [],
-        topicos: topics,
+        topicos: analysisTopics,
       };
     } catch (error) {
       if (error instanceof LlmError) throw new Error(error.message);
