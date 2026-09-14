@@ -52,11 +52,22 @@ export type Fonte = {
   para: string;
 };
 
+/** Transformador ideal (ou acoplamento eletromecânico com razão fixa: engrenagem, corda,
+ * H3 etc.) — 4 terminais, dois de cada lado. NUNCA modele como elemento dentro de um "ramo"
+ * comum (que só tem 2 terminais); use este campo dedicado. */
+export type Transformador = {
+  id: string;
+  label?: string;
+  primario: { de: string; para: string };
+  secundario: { de: string; para: string };
+};
+
 export type DiagramaEstruturado = {
   tipo: "mecanico" | "eletrico";
   nos: No[];
   ramos: Ramo[];
   fontes?: Fonte[];
+  transformadores?: Transformador[];
 };
 
 function isElemento(v: unknown): v is Elemento {
@@ -79,6 +90,20 @@ function isFonte(v: unknown): v is Fonte {
   return !!o && typeof o.id === "string" && typeof o.de === "string" && typeof o.para === "string" && typeof o.label === "string";
 }
 
+function isTransformador(v: unknown): v is Transformador {
+  const o = v as Partial<Transformador> | null;
+  return (
+    !!o &&
+    typeof o.id === "string" &&
+    !!o.primario &&
+    typeof o.primario.de === "string" &&
+    typeof o.primario.para === "string" &&
+    !!o.secundario &&
+    typeof o.secundario.de === "string" &&
+    typeof o.secundario.para === "string"
+  );
+}
+
 /** Valida e normaliza um diagrama vindo do modelo. Retorna null se a estrutura estiver malformada
  * (nesse caso o frontend cai de volta para o texto em "itens", nunca quebra a tela). */
 export function parseDiagrama(v: unknown): DiagramaEstruturado | null {
@@ -88,6 +113,7 @@ export function parseDiagrama(v: unknown): DiagramaEstruturado | null {
   if (!Array.isArray(o.nos) || !o.nos.every(isNo)) return null;
   if (!Array.isArray(o.ramos) || !o.ramos.every(isRamo)) return null;
   const fontes = Array.isArray(o.fontes) ? o.fontes.filter(isFonte) : [];
-  if (o.ramos.length === 0 && fontes.length === 0) return null;
-  return { tipo: o.tipo, nos: o.nos, ramos: o.ramos, fontes };
+  const transformadores = Array.isArray(o.transformadores) ? o.transformadores.filter(isTransformador) : [];
+  if (o.ramos.length === 0 && fontes.length === 0 && transformadores.length === 0) return null;
+  return { tipo: o.tipo, nos: o.nos, ramos: o.ramos, fontes, transformadores };
 }
