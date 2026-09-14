@@ -136,9 +136,11 @@ export const solveExercise = createServerFn({ method: "POST" })
     }
 
     try {
-      // 1) INPUT + ANALYZER — reconstrução matemática do problema + estrutura + método, numa só chamada
+      // 1) INPUT + ANALYZER — reconstrução matemática do problema + estrutura + método, numa só chamada.
+      // Usa MODELS.fast (não .reasoning) porque essa chamada frequentemente inclui imagem/PDF — no
+      // fallback do Groq, só o modelo "fast" é multimodal; o modelo "reasoning" só aceita texto.
       const rawExtraction = await callLlm({
-        model: MODELS.reasoning,
+        model: MODELS.fast,
         json: true,
         messages: [
           { role: "system", content: SYSTEM_INPUT_ANALYZER },
