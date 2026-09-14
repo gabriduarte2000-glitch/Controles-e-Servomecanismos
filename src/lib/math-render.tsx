@@ -81,6 +81,30 @@ export function MathLine({ line, className = "" }: { line: string; className?: s
     );
   }
 
+  if (trimmed.length > 4 && trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
+    return (
+      <div
+        className={`my-1 overflow-x-auto text-foreground ${className}`}
+        dangerouslySetInnerHTML={{ __html: renderTex(trimmed.slice(2, -2), true) }}
+      />
+    );
+  }
+
+  if (trimmed.length > 2 && trimmed.startsWith("$") && trimmed.endsWith("$")) {
+    // Tolerante a delimitador assimétrico do modelo ($$...$ ou $...$$) — mas só quando a
+    // linha é claramente UM bloco só (sem outro $ sobrando no meio); senão é uma linha
+    // composta (ex.: "$K$ = $1/3$" do bloco de Resultados) e precisa ir pro MathInline.
+    const inner = trimmed.replace(/^\${1,2}/, "").replace(/\${1,2}$/, "");
+    if (!inner.includes("$")) {
+      return (
+        <div
+          className={`my-1 overflow-x-auto text-foreground ${className}`}
+          dangerouslySetInnerHTML={{ __html: renderTex(inner, true) }}
+        />
+      );
+    }
+  }
+
   return (
     <p className={`math-line ${className}`}>
       <MathInline text={line} />
