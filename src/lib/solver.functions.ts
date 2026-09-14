@@ -11,8 +11,7 @@ import {
 } from "./llm-provider.server";
 import {
   SYSTEM_CONTROL_SOLVER,
-  SYSTEM_INPUT_PROCESSOR,
-  SYSTEM_PROBLEM_ANALYZER,
+  SYSTEM_INPUT_ANALYZER,
   SYSTEM_VERIFIER,
 } from "./control-prompts.server";
 import { formatRoots } from "./math-engine.server";
@@ -137,28 +136,31 @@ export const solveExercise = createServerFn({ method: "POST" })
     }
 
     try {
-      // 1) INPUT PROCESSOR — reconstrução matemática do problema
+      // 1) INPUT + ANALYZER — reconstrução matemática do problema + estrutura + método, numa só chamada
       const rawExtraction = await callLlm({
-        model: MODELS.fast,
+        model: MODELS.reasoning,
         json: true,
         messages: [
-          { role: "system", content: SYSTEM_INPUT_PROCESSOR },
+          { role: "system", content: SYSTEM_INPUT_ANALYZER },
           {
             role: "user",
             content: userContent(
               data,
-              "Reconstrua matematicamente o exercício de Controle contido no material abaixo.",
+              "Reconstrua matematicamente o exercício de Controle contido no material abaixo e já classifique.",
             ),
           },
         ],
       });
-      const extraction = parseJsonLoose<{
-        extracted_text?: string;
-        equations?: string[];
-        visual_elements?: string[];
-        diagrams?: Array<{ descricao?: string; funcao_transferencia_reconstruida?: string }>;
-        ilegivel?: string[];
-      }>(rawExtraction);
+      const merged = parseJsonLoose<
+        Record<string, unknown> & {
+          extracted_text?: string;
+          equations?: string[];
+          diagrams?: Array<{ descricao?: string; funcao_transferencia_reconstruida?: string }>;
+          ilegivel?: string[];
+        }
+      >(rawExtraction);
+      const extraction = merged;
+      const analysis = merged;
 
       const problemaReconstruido = [
         `Enunciado: ${extraction.extracted_text ?? data.text ?? ""}`,
@@ -173,17 +175,6 @@ export const solveExercise = createServerFn({ method: "POST" })
         .filter(Boolean)
         .join("\n");
 
-      // 2) PROBLEM ANALYZER — estrutura + escolha de método
-      const rawAnalysis = await callLlm({
-        model: MODELS.reasoning,
-        json: true,
-        messages: [
-          { role: "system", content: SYSTEM_PROBLEM_ANALYZER },
-          { role: "user", content: `PROBLEMA RECONSTRUÍDO (dados):\n${problemaReconstruido}` },
-        ],
-      });
-      const analysis = parseJsonLoose<Record<string, unknown>>(rawAnalysis);
-
       const analysisTopics = Array.isArray((analysis as { topic?: unknown }).topic)
         ? ((analysis as { topic: unknown[] }).topic.filter((t) => typeof t === "string") as string[])
         : [];
@@ -191,7 +182,7 @@ export const solveExercise = createServerFn({ method: "POST" })
         (analysis as { requer_analogia_eletromecanica?: unknown }).requer_analogia_eletromecanica === true ||
         analysisTopics.includes("analogia_eletromecanica");
 
-      // 3) CONTROL SOLVER
+      // 2) CONTROL SOLVER
       const solveMessages: LlmMessage[] = [
         { role: "system", content: SYSTEM_CONTROL_SOLVER },
         {

@@ -66,6 +66,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Google inclui "PerMinute" ou "PerDay" no quota_id da mensagem de erro — usa isso pra
+ * dizer se o limite volta em instantes ou só no dia seguinte, em vez de um genérico. */
+function describeGeminiQuota(rawMessage: string): string {
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes("perday") || lower.includes("per day")) {
+    return "Limite DIÁRIO gratuito do Gemini atingido — só volta a funcionar amanhã (o dia reseta à meia-noite horário do Pacífico dos EUA, ~4-5h da manhã no horário de Brasília).";
+  }
+  if (lower.includes("perminute") || lower.includes("per minute")) {
+    return "Limite POR MINUTO gratuito do Gemini atingido — volta a funcionar sozinho em menos de 1 minuto.";
+  }
+  return `Limite gratuito do Gemini atingido no momento (${rawMessage || "sem detalhes"}).`;
+}
+
 /** Extrai mimeType e base64 de uma data URL (ex.: "data:image/png;base64,AAAA..."). */
 function dataUrlToInlineData(dataUrl: string): { mimeType: string; data: string } {
   const match = /^data:([^;]+);base64,([\s\S]+)$/.exec(dataUrl);
@@ -156,13 +169,13 @@ async function callGemini({ model, messages, json }: CallOptions, apiKey: string
     if (isTransient && attempt < MAX_ATTEMPTS) {
       lastError =
         res.status === 429
-          ? new LlmError(429, "Limite gratuito do Gemini atingido no momento.")
+          ? new LlmError(429, describeGeminiQuota(message))
           : new LlmError(503, "Modelo do Gemini com alta demanda no momento (instabilidade do lado do Google).");
       await sleep(600 * attempt + Math.floor(Math.random() * 300));
       continue;
     }
 
-    if (res.status === 429) throw new LlmError(429, "Limite gratuito do Gemini atingido no momento.");
+    if (res.status === 429) throw new LlmError(429, describeGeminiQuota(message));
     if (res.status === 503) throw new LlmError(503, "O modelo do Gemini está com alta demanda no momento.");
     if (res.status === 403 || res.status === 401) {
       throw new LlmError(res.status, message || "Chave GEMINI_API_KEY inválida ou sem permissão.");
